@@ -1,0 +1,44 @@
+name: Mikeon88 Daily Monitor
+
+on:
+  schedule:
+    # GitHub 使用 UTC 時間。日本 11:00 = UTC 02:00
+    - cron: '0 2 * * *'
+  # 允許手動點擊按鈕觸發 (方便測試用)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check_and_notify:
+    runs_on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install requests beautifulsoup4
+
+    - name: Run Monitor Script
+      env:
+        # 這裡會讀取你在 GitHub 設定的 Secret
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      run: python main.py
+
+    - name: Commit and Push changes
+      # 如果 status.json 有更新 (翻頁或有新文)，就存回 GitHub
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+        git add status.json
+        # 如果沒有變化，commit 會失敗，所以加上 || exit 0 讓它不要報錯
+        git commit -m "Update monitor status" || exit 0
+        git push
