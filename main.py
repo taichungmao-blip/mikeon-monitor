@@ -6,6 +6,8 @@ import re
 from datetime import datetime
 
 # ================= 設定區 =================
+# 強制指定第 23 頁，移除 goto 參數，確保不跳轉回第一頁
+# 這裡直接寫死 Page 23，之後程式會自己處理翻頁
 DEFAULT_URL = "https://stocks.ddns.net/Forum/128/mikeon88%E6%8C%81%E8%82%A1%E5%A4%A7%E5%85%AC%E9%96%8B.aspx?page=23"
 STATUS_FILE = "status.json"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
@@ -21,7 +23,7 @@ def send_discord_notify(message_content, post_time, url):
         return
 
     # 內容擷取 (預覽)
-    preview = message_content[:300] + "..." if len(message_content) > 300 else message_content
+    preview = message_content[:500] + "..." if len(message_content) > 500 else message_content
     
     data = {
         "username": "Mikeon88 追蹤器",
@@ -29,13 +31,13 @@ def send_discord_notify(message_content, post_time, url):
             "title": "🚨 Mikeon88 有新發言！",
             "description": preview,
             "url": url,
-            "color": 3066993, 
+            "color": 15158332, # 紅色，代表緊急/新消息
             "fields": [
                 {"name": "發言時間", "value": post_time, "inline": True},
-                {"name": "連結", "value": f"[點擊前往查看]({url})", "inline": True}
+                {"name": "來源連結", "value": f"[點擊前往]({url})", "inline": True}
             ],
             "footer": {
-                "text": "已偵測到最新發言"
+                "text": "V3 精準鎖定版"
             }
         }]
     }
@@ -61,9 +63,11 @@ def check_for_next_page(soup, current_url):
         if not match: return None
         current_page = int(match.group(1))
         
+        # 尋找所有分頁按鈕
         page_links = soup.find_all("a", href=True)
         for link in page_links:
             txt = link.text.strip()
+            # 確保是數字且大於當前頁碼
             if txt.isdigit() and int(txt) > current_page:
                 new_href = link['href']
                 if not new_href.startswith("http"):
@@ -74,19 +78,24 @@ def check_for_next_page(soup, current_url):
     return None
 
 def main():
-    print(f"🚀 啟動檢查: {datetime.now()}")
+    print(f"🚀 V3 啟動檢查: {datetime.now()}")
     
     status = load_status()
     current_url = status["current_url"]
     last_fingerprint = status["last_fingerprint"]
     
-    print(f"🎯 目標網址: {current_url}")
+    # 安全檢查：確保網址中沒有奇怪的參數導致跳回第一頁
+    if "goto=" in current_url:
+        print("⚠️ 偵測到舊的跳轉參數，重置為標準分頁網址...")
+        current_url = DEFAULT_URL
+
+    print(f"🎯 鎖定網址: {current_url}")
 
     try:
         res = requests.get(current_url, headers=HEADERS, timeout=20)
         res.encoding = 'utf-8'
         if res.status_code != 200:
-            print("❌ 網頁讀取失敗")
+            print(f"❌ 網頁讀取失敗: {res.status_code}")
             return
 
         soup = BeautifulSoup(res.text, "html.parser")
@@ -94,81 +103,89 @@ def main():
         # 1. 自動翻頁檢查
         next_page = check_for_next_page(soup, current_url)
         if next_page:
-            print(f"🚀 發現新頁面！切換至: {next_page}")
+            print(f"🚀 發現新頁面 (Page Update)！切換至: {next_page}")
             current_url = next_page
             res = requests.get(current_url, headers=HEADERS)
             res.encoding = 'utf-8'
             soup = BeautifulSoup(res.text, "html.parser")
 
-        # 2. 抓取發言 (加強版深度搜尋)
-        post_bodies = soup.find_all("div", class_="post-body")
+        # =========================================================
+        # V3 核心修改：先找人，再找文
+        # =========================================================
+        
         found_posts = []
+        
+        # 根據你的截圖1，作者連結有 id="...lnkName"
+        # 我們搜尋所有 id 包含 "lnkName" 的 a 標籤
+        author_links = soup.find_all("a", id=re.compile("lnkName"))
+        
+        print(f"🔍 本頁共找到 {len(author_links)} 個發言者，開始過濾 Mikeon88...")
 
-        print(f"🔍 本頁共找到 {len(post_bodies)} 個發言區塊，開始分析...")
-
-        for body in post_bodies:
-            container = body
-            is_target = False
-            post_time = "無時間資訊"
+        for author in author_links:
+            author_name = author.get_text(strip=True)
             
-            # 關鍵修改：往上找 6 層 (原本只有3層)
-            # 這是為了應付多層 Table 巢狀結構
-            for i in range(6):
-                if container.parent:
-                    container = container.parent
-                    
-                    # 尋找作者 mikeon88
-                    author = container.find("a", string=re.compile("mikeon88", re.I))
-                    
-                    if author:
-                        is_target = True
-                        # 找到作者後，在同層找時間
-                        time_obj = container.find("span", class_="local-time")
-                        if time_obj: 
-                            post_time = time_obj.text.strip()
-                        else:
-                            # 備用方案：如果找不到 span，試著找有沒有看起來像日期的文字
-                            text_content = container.get_text()
-                            date_match = re.search(r'\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{1,2}:\d{1,2}', text_content)
-                            if date_match:
-                                post_time = date_match.group(0)
+            # 只有當作者名字真的是 mikeon88 時才處理 (忽略大小寫)
+            if "mikeon88" in author_name.lower():
+                print("✅ 找到 Mikeon88 本人！正在解析內容...")
+                
+                # 往上找共同的容器 (通常是 tr 或 table 或 card div)
+                # 我們往上找 4 層，每一層都試著找 post-body
+                container = author
+                post_content = "無法解析內容"
+                post_time = "無時間資訊"
+                
+                for _ in range(5):
+                    if container.parent:
+                        container = container.parent
                         
-                        # 找到作者就停止往上找
+                        # 在這個容器裡找內容區塊 (Image 3)
+                        body_div = container.find("div", class_="post-body")
+                        if body_div:
+                            post_content = body_div.get_text("\n", strip=True)
+                        
+                        # 在這個容器裡找時間 (Image 2)
+                        time_span = container.find("span", class_="local-time")
+                        if time_span:
+                            post_time = time_span.text.strip()
+                        
+                        # 如果兩者都找到，或是至少找到了內容，就當作成功
+                        if body_div:
+                            break
+                    else:
                         break
-                else:
-                    break
-            
-            if is_target:
-                content = body.get_text("\n", strip=True)
-                # 過濾掉太短的像是簽名檔的內容 (可選)
-                found_posts.append({"time": post_time, "content": content})
+                
+                if post_content != "無法解析內容":
+                    found_posts.append({"time": post_time, "content": post_content})
+
+        # =========================================================
 
         if not found_posts:
-            print("💤 本頁未解析出 Mikeon88 的有效發言 (可能結構更變或不在本頁)")
+            print("💤 本頁沒有 Mikeon88 的發言")
             save_status(current_url, last_fingerprint)
             return
 
-        # 3. 鎖定「最後一則」 (也就是最新的)
+        # 取得最後一篇 (最新的)
         latest = found_posts[-1]
         
-        # 建立指紋：時間 + 內容前20字
-        current_fingerprint = f"{latest['time']}_{latest['content'][:20]}"
+        # 建立指紋
+        current_fingerprint = f"{latest['time']}_{latest['content'][:30]}"
         
-        print(f"🔎 最新一則時間: {latest['time']}")
+        print(f"🔎 偵測到最新發言時間: {latest['time']}")
         print(f"🔎 內容預覽: {latest['content'][:30]}...")
 
+        # 這裡加一個判斷：如果時間是空的，可能是抓取失敗，為了避免誤報，我們可以選擇不發送，或者強制發送
+        # 但既然你之前的截圖是有時間的 (608萬那篇)，這次應該能抓到
+
         if current_fingerprint != last_fingerprint:
-            # 只有當「指紋」跟上次不一樣時，才發通知
-            print(f"🎉 發現新貼文！")
+            print(f"🎉 內容與上次不同，發送通知！")
             send_discord_notify(latest['content'], latest['time'], current_url)
             save_status(current_url, current_fingerprint)
         else:
-            print("💤 內容與上次相同，無須通知")
-            # 雖然沒新文，但也更新一下 url 狀態 (防翻頁 bug)
+            print("💤 內容與上次相同，跳過通知")
             save_status(current_url, last_fingerprint)
 
     except Exception as e:
-        print(f"❌ 錯誤: {e}")
+        print(f"❌ 嚴重錯誤: {e}")
 
 if __name__ == "__main__":
     main()
