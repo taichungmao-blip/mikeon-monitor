@@ -119,4 +119,32 @@ def main():
                 print("🔄 尋找 [雙箭頭 >>] 或 [Next] 按鈕...")
                 
                 # V9 經典 XPath: 同時鎖定 ">>", "Next", "下一頁", ">"
-                # 優先級：雙箭頭
+                # 優先級：雙箭頭 >> 
+                next_btn = driver.find_element(By.XPATH, "//a[contains(text(), '>>') or contains(text(), 'Next') or contains(text(), '下一頁') or contains(text(), '>') ]")
+                
+                # 檢查是否被禁用 (disabled)
+                if "disabled" in next_btn.get_attribute("class"):
+                    print("🏁 按鈕已禁用，已達最後一頁")
+                    break
+                
+                # 執行點擊
+                driver.execute_script("arguments[0].click();", next_btn)
+                
+                print("➡️ 跳轉成功，等待載入...")
+                time.sleep(3) # 等待翻頁渲染
+                current_page += 1
+                
+            except Exception as e:
+                print(f"🏁 無法找到翻頁按鈕 (或已達終點)，停止翻頁。")
+                # print(f"DEBUG: {e}")
+                break
+                
+    except Exception as e:
+        print(f"❌ 程式發生嚴重錯誤: {e}")
+        
+    finally:
+        driver.quit()
+        print("✅ 監控結束，資源已釋放")
+
+if __name__ == "__main__":
+    main()
