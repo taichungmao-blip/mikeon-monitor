@@ -1,59 +1,61 @@
 import os
 import time
 import requests
+import hashlib
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 # ==========================================
 # 🛠️ 使用者設定區
 # ==========================================
-# 1. 目標網址
-TARGET_URL = "https://stocks.ddns.net/Forum/128/mikeon88%E6%8C%81%E8%82%A1%E5%A4%A7%E5%85%AC%E9%96%8B.aspx?goto=14104"  # 請確認這是你的目標網址
-
-# 2. Discord Webhook (優先讀取環境變數，沒有則使用預設值)
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK", "你的_DISCORD_WEBHOOK_URL_貼在這裡")
-
-# 3. 爬蟲設定
-MAX_PAGES = 10      # 最大翻頁數 (防止無限迴圈)
-ROW_SELECTOR = "tr" # 文章列表的每一行 (通常是 tr 或 div.post-item)
+TARGET_URL = "https://stocks.ddns.net/Forum/128/mikeon88%E6%8C%81%E8%82%A1%E5%A4%A7%E5%85%AC%E9%96%8B.aspx?goto=14104"
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK", "") # 請確認 GitHub Secrets 或直接填入
+HISTORY_FILE = "sent_history.txt" # 用來記錄已發送過的內容
 
 # ==========================================
-# 🔧 系統核心 (V11: Headless 防崩潰設定)
+# 🔧 系統核心
 # ==========================================
 def get_driver():
-    """設定 Chrome 瀏覽器 (針對 GitHub Actions 優化)"""
     options = Options()
-    
-    # --- [V11 關鍵修正: 解決 CI/CD 環境崩潰問題] ---
-    options.add_argument("--headless=new")  # 無頭模式
-    options.add_argument("--no-sandbox")    # Linux/Docker 必備
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--window-size=1920,1080") # 確保版面正確
-    
-    # 偽裝成一般使用者 (User-Agent)
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    
     return webdriver.Chrome(options=options)
 
-def send_discord_notify(title, link, post_time):
-    """發送 Discord Embed 美化通知"""
-    if "你的_DISCORD" in DISCORD_WEBHOOK_URL or not DISCORD_WEBHOOK_URL:
-        # print(f"⚠️ 跳過通知 (Webhook 未設定): {title}")
+def load_history():
+    """讀取已發送過的紀錄"""
+    if not os.path.exists(HISTORY_FILE):
+        return set()
+    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        return set(line.strip() for line in f)
+
+def save_history(content_hash):
+    """將新內容的特徵碼寫入紀錄"""
+    with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+        f.write(f"{content_hash}\n")
+
+def send_discord_notify(full_text, link):
+    if not DISCORD_WEBHOOK_URL:
+        print("⚠️ 未設定 Discord Webhook，跳過通知")
         return
 
+    # 為了美觀，將過長的文字截斷放在標題
+    title_preview = full_text[:30] + "..." if len(full_text) > 30 else full_text
+    
     data = {
         "embeds": [{
-            "title": f"🔔 發現新內容: {title}",
-            "description": f"📅 時間: **{post_time}**\n🔗 [點擊前往文章]({link})",
-            "color": 3447003,  # 藍色
-            "footer": {"text": "Mikeon Monitor V11 (V9 Hybrid)"}
+            "title": f"🔔 新留言偵測",
+            "description": f"**內容預覽：**\n{full_text}\n\n🔗 [點擊前往討論區]({link})",
+            "color": 5814783, # 藍綠色
+            "footer": {"text": "Mikeon Monitor V13"}
         }]
     }
     try:
         requests.post(DISCORD_WEBHOOK_URL, json=data)
+        print("✅ Discord 通知已發送！")
     except Exception as e:
         print(f"❌ Discord 發送失敗: {e}")
 
@@ -61,90 +63,66 @@ def send_discord_notify(title, link, post_time):
 # 🏁 主程式邏輯
 # ==========================================
 def main():
-    print("🚀 V11 (V9 雙箭頭混合版) 啟動中...")
+    print(f"🚀 V13 監控啟動 (啟用 Discord + 去重機制)...")
+    
+    # 1. 讀取歷史紀錄
+    sent_history = load_history()
+    print(f"📂 目前已記錄 {len(sent_history)} 筆歷史資料")
+
     driver = get_driver()
     
     try:
         driver.get(TARGET_URL)
         print("⏳ 網頁載入中...")
-        time.sleep(5) # 等待初始載入
+        time.sleep(5) 
 
-        current_page = 1
-        
-        while current_page <= MAX_PAGES:
-            print(f"\n📄 --- 正在分析第 {current_page} 頁 ---")
-            
-            # 1. 抓取文章列表
-            rows = driver.find_elements(By.CSS_SELECTOR, ROW_SELECTOR)
-            print(f"🔍 掃描到 {len(rows)} 筆資料區塊...")
+        # 這裡只抓第一頁即可，因為最新的都在最下面或最上面
+        # 如果需要翻頁請保留之前的 while 迴圈，但通常監控只需看最新頁
+        rows = driver.find_elements(By.CSS_SELECTOR, "div.card")
+        print(f"🔍 本頁掃描到 {len(rows)} 篇卡片...")
 
-            for i, row in enumerate(rows):
-                try:
-                    # =================================================
-                    # ✅ [V11 修正: 精準資料解析]
-                    # =================================================
-                    
-                    # 1. 抓時間 (優先找 class="local-time"，避開 display:none)
-                    try:
-                        time_el = row.find_element(By.CSS_SELECTOR, ".local-time")
-                        post_time = time_el.text
-                        if not post_time: # 雙重確認
-                            post_time = time_el.get_attribute("data-utc")
-                    except:
-                        # 找不到時間通常代表這是表頭或分隔線
-                        continue 
-
-                    # 2. 抓連結與標題 (找 href 屬性)
-                    try:
-                        link_el = row.find_element(By.TAG_NAME, "a")
-                        post_title = link_el.text
-                        post_link = link_el.get_attribute("href")
-                    except:
-                        continue 
-
-                    # 3. 輸出結果與通知
-                    print(f"📌 [{post_time}] {post_title}")
-                    
-                    # 可以在這裡加入你的「已讀判斷」邏輯 (例如比對 last_seen_url)
-                    # send_discord_notify(post_title, post_link, post_time)
-
-                except Exception as e:
-                    # 忽略單行解析錯誤，繼續下一行
+        new_count = 0
+        for row in rows:
+            try:
+                # [V13 簡化邏輯] 
+                # 直接抓取卡片內的全部文字，因為時間已經包含在內文了
+                full_text = row.text.strip()
+                
+                # 過濾空內容或極短內容 (例如分隔線)
+                if len(full_text) < 5:
                     continue
 
-            # =================================================
-            # 🏹 [V9 核心: 雙箭頭鎖定翻頁邏輯]
-            # =================================================
-            try:
-                print("🔄 尋找 [雙箭頭 >>] 或 [Next] 按鈕...")
-                
-                # V9 經典 XPath: 同時鎖定 ">>", "Next", "下一頁", ">"
-                # 優先級：雙箭頭 >> 
-                next_btn = driver.find_element(By.XPATH, "//a[contains(text(), '>>') or contains(text(), 'Next') or contains(text(), '下一頁') or contains(text(), '>') ]")
-                
-                # 檢查是否被禁用 (disabled)
-                if "disabled" in next_btn.get_attribute("class"):
-                    print("🏁 按鈕已禁用，已達最後一頁")
-                    break
-                
-                # 執行點擊
-                driver.execute_script("arguments[0].click();", next_btn)
-                
-                print("➡️ 跳轉成功，等待載入...")
-                time.sleep(3) # 等待翻頁渲染
-                current_page += 1
-                
+                # 產生內容的雜湊值 (Hash) 作為唯一 ID，比對是否發送過
+                content_hash = hashlib.md5(full_text.encode('utf-8')).hexdigest()
+
+                # 如果這則內容沒發送過
+                if content_hash not in sent_history:
+                    print(f"🆕 發現新內容: {full_text[:30]}...")
+                    
+                    # 發送通知
+                    send_discord_notify(full_text, TARGET_URL)
+                    
+                    # 寫入紀錄防止重複
+                    save_history(content_hash)
+                    sent_history.add(content_hash)
+                    new_count += 1
+                else:
+                    # print(f"😴 已讀內容，跳過: {full_text[:10]}...")
+                    pass
+
             except Exception as e:
-                print(f"🏁 無法找到翻頁按鈕 (或已達終點)，停止翻頁。")
-                # print(f"DEBUG: {e}")
-                break
-                
-    except Exception as e:
-        print(f"❌ 程式發生嚴重錯誤: {e}")
+                continue
         
+        if new_count == 0:
+            print("💤 沒有發現新內容")
+        else:
+            print(f"🎉 成功處理 {new_count} 則新訊息")
+
+    except Exception as e:
+        print(f"❌ 執行錯誤: {e}")
     finally:
         driver.quit()
-        print("✅ 監控結束，資源已釋放")
+        print("✅ 監控結束")
 
 if __name__ == "__main__":
     main()
