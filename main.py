@@ -208,4 +208,27 @@ def main():
                 else: break
             
             if post_content != "無內容":
-                found_posts.append({"time": post_time
+                found_posts.append({"time": post_time, "content": post_content})
+
+    if not found_posts:
+        print("💤 本頁沒有 Mikeon88 的發言")
+        save_status(last_fingerprint)
+        return
+
+    # 3. 鎖定最新發言
+    latest = found_posts[-1]
+    print(f"🔎 最新發言時間: {latest['time']}")
+    print(f"📝 內容預覽: {latest['content'][:30]}...")
+    
+    current_fingerprint = f"{latest['time']}_{latest['content'][:30]}"
+    
+    if current_fingerprint != last_fingerprint:
+        print(f"🎉 發現新內容！發送通知...")
+        send_discord_notify(latest['content'], latest['time'], BASE_URL)
+        save_status(current_fingerprint)
+    else:
+        print("💤 內容與上次相同，跳過通知")
+        save_status(last_fingerprint)
+
+if __name__ == "__main__":
+    main()
