@@ -1,237 +1,114 @@
-import requests
-from bs4 import BeautifulSoup
 import os
-import json
-import re
-from datetime import datetime
 import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 
-# ================= 設定區 =================
-BASE_URL = "https://stocks.ddns.net/Forum/128/mikeon88%E6%8C%81%E8%82%A1%E5%A4%A7%E5%85%AC%E9%96%8B.aspx"
-STATUS_FILE = "status.json"
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
-# ==============================================
-
-def send_discord_notify(message_content, post_time, url):
-    if not DISCORD_WEBHOOK_URL:
-        print("❌ 未設定 Discord Webhook")
-        return
-
-    preview = message_content[:300] + "..." if len(message_content) > 300 else message_content
-    
-    data = {
-        "username": "Mikeon88 追蹤器",
-        "embeds": [{
-            "title": "🚨 Mikeon88 有新發言！",
-            "description": preview,
-            "url": url,
-            "color": 15158332, 
-            "fields": [
-                {"name": "發言時間", "value": post_time, "inline": True},
-                {"name": "來源連結", "value": f"[點擊前往]({url})", "inline": True}
-            ],
-            "footer": {
-                "text": "V10 無盡攀登版"
-            }
-        }]
-    }
-    try:
-        requests.post(DISCORD_WEBHOOK_URL, json=data)
-        print("✅ Discord 通知已發送")
-    except Exception as e:
-        print(f"❌ 發送失敗: {e}")
-
-def load_status():
-    if os.path.exists(STATUS_FILE):
-        with open(STATUS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"last_fingerprint": ""}
-
-def save_status(fingerprint):
-    with open(STATUS_FILE, "w", encoding="utf-8") as f:
-        json.dump({"last_fingerprint": fingerprint}, f, ensure_ascii=False, indent=4)
-
-def get_hidden_fields(soup):
-    data = {}
-    for item in ["__VIEWSTATE", "__VIEWSTATEGENERATOR", "__EVENTVALIDATION"]:
-        element = soup.find("input", {"id": item})
-        if element:
-            data[item] = element.get("value")
-    return data
-
-def extract_do_postback_args(href):
-    if not href: return None, None
-    match = re.search(r"__doPostBack\(['\"]([^'\"]*)['\"],\s*['\"]([^'\"]*)['\"]\)", href)
-    if match:
-        return match.group(1), match.group(2)
-    return None, None
-
-def get_current_page_num(soup):
-    """嘗試找出目前頁面是第幾頁"""
-    # 方法：通常當前頁碼的按鈕是沒有 href 的，或者有特定 class
-    # 我們檢查分頁區塊
-    try:
-        # 尋找分頁區塊 (通常在 table 或 div 裡)
-        # 這裡我們找所有數字按鈕，看看哪個沒有 href (代表是當前頁)
-        # 或者被 span 包住的數字
-        pager_active = soup.find("span", style=re.compile(r"font-weight:bold|color:Red", re.I))
-        if pager_active and pager_active.text.isdigit():
-             return int(pager_active.text)
+# ==========================================
+# 1. 建立模擬環境 (模擬你的截圖結構)
+# ==========================================
+def create_mock_html():
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <body>
+        <h2>模擬 V10/V11 爬蟲目標列表</h2>
         
-        # 備用方案：有些網站當前頁只是純文字，不是連結
-        # 我們假設如果找不到當前頁，就回傳 0，讓程式依靠最大數字去跳
-        return 0
-    except:
-        return 0
-
-def chase_last_page(session):
-    print("1️⃣ 進入入口頁面...")
-    res = session.get(BASE_URL, headers=HEADERS, timeout=30)
-    soup = BeautifulSoup(res.text, "html.parser")
-    
-    current_page = 1
-    max_hops = 15 # 增加跳轉次數上限
-    
-    for hop in range(max_hops):
-        # 嘗試識別當前頁
-        detected_page = get_current_page_num(soup)
-        if detected_page > current_page:
-            current_page = detected_page
-        
-        print(f"🏃 第 {hop + 1} 次跳轉分析 (目前約在 Page {current_page})...")
-        
-        links = soup.find_all("a", href=re.compile(r"__doPostBack"))
-        
-        best_link = None
-        best_arg_val = -1
-        target_type = "None"
-        
-        # 掃描所有按鈕，尋找最佳跳轉目標
-        for link in links:
-            target, arg = extract_do_postback_args(link['href'])
-            txt = link.get_text(strip=True)
-            
-            # 解析參數 (格式通常是 Page$11 或 Page$Last)
-            if arg and arg.startswith("Page$"):
-                val_str = arg.replace("Page$", "")
+        <div class="post-item-container">
+            <h4>
+                <a href="https://example.com/post/123" id="ctl00_link_01">V11 測試文章標題</a>
+            </h4>
+            <small class="text-muted">
+                <span id="ctl00_hidden_01" style="display:none;">2025-12-13T01:49:42Z</span>
                 
-                # 優先級 S: 直接是 Last
-                if val_str == "Last" or "Last" in txt or "末頁" in txt:
-                    best_link = link
-                    target_type = "Last"
-                    break # 找到最後一頁，直接鎖定
+                <span class="local-time" data-utc="2025-12-13T01:49:42Z">2025/12/13 10:49:42</span>
+            </small>
+        </div>
+
+        <hr>
+
+        <div class="post-item-container">
+            <h4><a href="https://example.com/post/456">第二篇文章</a></h4>
+            <small class="text-muted">
+                <span style="display:none;">2025-12-14...</span>
+                <span class="local-time" data-utc="2025-12-14...">2025/12/14 11:00:00</span>
+            </small>
+        </div>
+    </body>
+    </html>
+    """
+    with open("mock_page.html", "w", encoding="utf-8") as f:
+        f.write(html_content)
+    return os.path.abspath("mock_page.html")
+
+# ==========================================
+# 2. V11 核心抓取邏輯 (請將這段應用到你的主程式)
+# ==========================================
+def run_test():
+    # 設定瀏覽器 (無頭模式可選)
+    options = Options()
+    # options.add_argument("--headless") 
+    
+    print("🚀 V11 測試啟動...")
+    driver = webdriver.Chrome(options=options)
+    
+    try:
+        # 載入本地模擬頁面
+        file_path = create_mock_html()
+        driver.get(f"file:///{file_path}")
+        time.sleep(1) # 等待渲染
+
+        # 模擬：找到所有文章區塊 (假設每篇文章都被包在 div 裡)
+        # 注意：你需要根據實際網站調整最外層的尋找方式，例如 find_elements(By.XPATH, "//tr") 或 div class
+        posts = driver.find_elements(By.CSS_SELECTOR, ".post-item-container")
+
+        print(f"🔍 找到 {len(posts)} 篇文章，開始解析...\n")
+
+        for index, row in enumerate(posts, 1):
+            print(f"--- 解析第 {index} 篇 ---")
+            
+            # ---------------------------------------------------
+            # ✅ 修正點 1: 抓取時間 (避開 display:none)
+            # ---------------------------------------------------
+            try:
+                # 使用 CSS Selector 直接找 class="local-time"
+                # "." 代表從當前 row 節點往下找
+                time_el = row.find_element(By.CSS_SELECTOR, ".local-time")
+                post_time = time_el.text
                 
-                # 優先級 A: 數字
-                if val_str.isdigit():
-                    page_num = int(val_str)
-                    # 只有當這個數字「大於」我們目前所在的頁數時，才考慮
-                    if page_num > current_page and page_num > best_arg_val:
-                        best_arg_val = page_num
-                        best_link = link
-                        target_type = f"Page {page_num}"
-            
-            # 優先級 B: 只有文字特徵 (>> 或 ...)
-            elif ">>" in txt or "..." in txt:
-                # 只有當我們還沒找到明確的數字目標時，才把這個當備案
-                if target_type == "None":
-                    best_link = link
-                    target_type = "Next Block"
+                # 如果文字是空的 (有些瀏覽器行為不同)，改抓屬性
+                if not post_time:
+                    post_time = time_el.get_attribute("data-utc") + " (來自屬性)"
+            except Exception as e:
+                post_time = "❌ 抓取失敗"
 
-        # 決策執行
-        if best_link:
-            print(f"🎯 鎖定目標: [{target_type}]，執行跳轉...")
-            target, arg = extract_do_postback_args(best_link['href'])
-            
-            payload = get_hidden_fields(soup)
-            payload["__EVENTTARGET"] = target
-            payload["__EVENTARGUMENT"] = arg
-            
-            post_res = session.post(BASE_URL, data=payload, headers=HEADERS, timeout=30)
-            if post_res.status_code == 200:
-                soup = BeautifulSoup(post_res.text, "html.parser")
-                # 更新當前頁碼紀錄 (如果是跳數字的話)
-                if target_type.startswith("Page "):
-                    current_page = int(target_type.split()[1])
-                elif target_type == "Next Block":
-                    current_page += 1 # 預估前進了
-                print("✅ 跳轉成功！")
-                time.sleep(1)
-            else:
-                print(f"❌ 跳轉失敗: {post_res.status_code}")
-                break
-        else:
-            print("🏁 無法找到更後面的頁面，判斷已達【終點】")
-            break
-            
-    return soup
+            # ---------------------------------------------------
+            # ✅ 修正點 2: 抓取連結 (抓 href 屬性)
+            # ---------------------------------------------------
+            try:
+                # 假設連結是標題 (h4 下的 a) 或直接是 row 下的 a
+                # 這裡使用 tag name "a" 搜尋該區塊內的第一個連結
+                link_el = row.find_element(By.TAG_NAME, "a")
+                post_title = link_el.text
+                post_link = link_el.get_attribute("href") # 關鍵：要抓 href 屬性！
+            except:
+                post_title = "未知標題"
+                post_link = "❌ 找不到連結"
 
-def extract_time(container):
-    time_span = container.find("span", class_="local-time")
-    if time_span: return time_span.text.strip()
-    text = container.get_text()
-    match = re.search(r'\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{1,2}:\d{1,2}', text)
-    if match: return match.group(0)
-    return "無時間資訊"
+            # ---------------------------------------------------
+            # 🖨️ 結果輸出
+            # ---------------------------------------------------
+            print(f"📅 發言時間: {post_time}")
+            print(f"📝 文章標題: {post_title}")
+            print(f"🔗 來源連結: {post_link}")
+            print("-----------------------")
 
-def main():
-    print(f"🚀 V10 啟動檢查: {datetime.now()}")
-    status = load_status()
-    last_fingerprint = status["last_fingerprint"]
-    
-    session = requests.Session()
-    
-    # 1. 執行追頁
-    soup = chase_last_page(session)
-
-    # 2. 搜尋 Mikeon88
-    author_links = soup.find_all("a", id=re.compile("lnkName"))
-    found_posts = []
-    print(f"🔍 掃描最終頁面發言...")
-
-    for author in author_links:
-        author_name = author.get_text(strip=True)
-        if "mikeon88" in author_name.lower():
-            container = author
-            post_content = "無內容"
-            post_time = "無時間"
-            
-            for _ in range(5):
-                if container.parent:
-                    container = container.parent
-                    body_div = container.find("div", class_="post-body")
-                    if body_div:
-                        post_content = body_div.get_text("\n", strip=True)
-                    t = extract_time(container)
-                    if t != "無時間資訊": post_time = t
-                    if body_div: break
-                else: break
-            
-            if post_content != "無內容":
-                found_posts.append({"time": post_time, "content": post_content})
-
-    if not found_posts:
-        print("💤 本頁沒有 Mikeon88 的發言")
-        save_status(last_fingerprint)
-        return
-
-    # 3. 鎖定最新發言
-    latest = found_posts[-1]
-    print(f"🔎 最新發言時間: {latest['time']}")
-    print(f"📝 內容預覽: {latest['content'][:30]}...")
-    
-    current_fingerprint = f"{latest['time']}_{latest['content'][:30]}"
-    
-    if current_fingerprint != last_fingerprint:
-        print(f"🎉 發現新內容！發送通知...")
-        send_discord_notify(latest['content'], latest['time'], BASE_URL)
-        save_status(current_fingerprint)
-    else:
-        print("💤 內容與上次相同，跳過通知")
-        save_status(last_fingerprint)
+    finally:
+        driver.quit()
+        # 清除測試檔案
+        if os.path.exists("mock_page.html"):
+            os.remove("mock_page.html")
+        print("\n✅ 測試結束")
 
 if __name__ == "__main__":
-    main()
+    run_test()
