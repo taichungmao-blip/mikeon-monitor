@@ -184,4 +184,13 @@ def main():
         if current_fingerprint != last_fingerprint:
             print(f"🎉 發現新貼文 (或初次執行)！發送通知...")
             send_discord_notify(latest['content'], latest['time'], real_target_url)
-            save_status(current_finger
+            save_status(current_fingerprint)
+        else:
+            print("💤 內容與上次相同，跳過通知")
+            save_status(last_fingerprint)
+
+    except Exception as e:
+        print(f"❌ 執行錯誤: {e}")
+
+if __name__ == "__main__":
+    main()
