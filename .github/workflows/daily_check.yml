@@ -23,7 +23,11 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-
+ # 👇 加入這一段：安裝 Selenium
+    - name: Install dependencies
+      run: |
+       python -m pip install --upgrade pip
+       pip install selenium
     - name: Install dependencies
       run: |
         pip install requests beautifulsoup4
