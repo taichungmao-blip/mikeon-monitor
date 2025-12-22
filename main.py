@@ -35,7 +35,7 @@ def send_discord_notify(message_content, post_time, url):
                 {"name": "來源連結", "value": f"[點擊前往]({url})", "inline": True}
             ],
             "footer": {
-                "text": "V9 雙箭頭鎖定版"
+                "text": "V10 無盡攀登版"
             }
         }]
     }
@@ -70,115 +70,124 @@ def extract_do_postback_args(href):
         return match.group(1), match.group(2)
     return None, None
 
+def get_current_page_num(soup):
+    """嘗試找出目前頁面是第幾頁"""
+    # 方法：通常當前頁碼的按鈕是沒有 href 的，或者有特定 class
+    # 我們檢查分頁區塊
+    try:
+        # 尋找分頁區塊 (通常在 table 或 div 裡)
+        # 這裡我們找所有數字按鈕，看看哪個沒有 href (代表是當前頁)
+        # 或者被 span 包住的數字
+        pager_active = soup.find("span", style=re.compile(r"font-weight:bold|color:Red", re.I))
+        if pager_active and pager_active.text.isdigit():
+             return int(pager_active.text)
+        
+        # 備用方案：有些網站當前頁只是純文字，不是連結
+        # 我們假設如果找不到當前頁，就回傳 0，讓程式依靠最大數字去跳
+        return 0
+    except:
+        return 0
+
 def chase_last_page(session):
     print("1️⃣ 進入入口頁面...")
     res = session.get(BASE_URL, headers=HEADERS, timeout=30)
     soup = BeautifulSoup(res.text, "html.parser")
     
-    # 用來記錄已經訪問過的頁面特徵，避免無窮迴圈
-    visited_fingerprints = set()
+    current_page = 1
+    max_hops = 15 # 增加跳轉次數上限
     
-    # 預防無窮迴圈，最多翻 10 次
-    for hop in range(10):
-        # 建立當前頁面的簡單指紋 (例如第一篇文章的內容)，用來判斷是否真的翻頁了
-        first_post = soup.find("div", class_="post-body")
-        page_fingerprint = first_post.get_text()[:50] if first_post else f"Empty_{hop}"
+    for hop in range(max_hops):
+        # 嘗試識別當前頁
+        detected_page = get_current_page_num(soup)
+        if detected_page > current_page:
+            current_page = detected_page
         
-        if page_fingerprint in visited_fingerprints:
-            print("⚠️ 偵測到頁面重複，停止翻頁。")
-            break
-        visited_fingerprints.add(page_fingerprint)
-
-        print(f"🏃 第 {hop + 1} 次搜尋分頁按鈕...")
+        print(f"🏃 第 {hop + 1} 次跳轉分析 (目前約在 Page {current_page})...")
         
-        # 抓取所有 PostBack 連結
         links = soup.find_all("a", href=re.compile(r"__doPostBack"))
         
-        target_link = None
-        target_desc = ""
+        best_link = None
+        best_arg_val = -1
+        target_type = "None"
         
-        #Debug: 印出所有找到的按鈕文字，方便除錯
-        # print("   (Debug) 本頁按鈕:", [l.get_text(strip=True) for l in links])
-
-        # 策略：優先找 ">>" 或 "Last" 或 "末頁"
-        # 只要文字裡包含 ">" 且不是 "<<" (上一頁)，我們就認為它是往後的
+        # 掃描所有按鈕，尋找最佳跳轉目標
         for link in links:
+            target, arg = extract_do_postback_args(link['href'])
             txt = link.get_text(strip=True)
             
-            # 忽略上一頁/第一頁的按鈕
-            if "<" in txt or "First" in txt or "首頁" in txt:
-                continue
-
-            # 尋找目標特徵
-            # 1. 雙箭頭 (可能中間有空格，或是全形)
-            if ">>" in txt or "»" in txt or ">" in txt or "Last" in txt or "末頁" in txt:
-                target_link = link
-                target_desc = f"找到 [{txt}] 按鈕"
-                # 如果找到明確的 >> 就直接選定，不找了
-                if ">>" in txt or "Last" in txt:
-                    break
-        
-        # 如果沒找到 >>，才退而求其次找數字
-        if not target_link:
-            print("   (未發現箭頭，嘗試尋找最大數字...)")
-            # 找出目前分頁列中最大的數字
-            # 但我們不知道當前是第幾頁，所以這招有風險，
-            # 比較安全的做法是：如果有 "..." 就按 "..."
-            for link in links:
-                if "..." in link.get_text():
-                    target_link = link
-                    target_desc = "找到 [...] 按鈕"
-
-        # 執行跳轉
-        if target_link:
-            print(f"🎯 {target_desc}，執行跳轉！")
-            target, arg = extract_do_postback_args(target_link['href'])
-            
-            if target:
-                payload = get_hidden_fields(soup)
-                payload["__EVENTTARGET"] = target
-                payload["__EVENTARGUMENT"] = arg
+            # 解析參數 (格式通常是 Page$11 或 Page$Last)
+            if arg and arg.startswith("Page$"):
+                val_str = arg.replace("Page$", "")
                 
-                post_res = session.post(BASE_URL, data=payload, headers=HEADERS, timeout=30)
-                if post_res.status_code == 200:
-                    soup = BeautifulSoup(post_res.text, "html.parser")
-                    print("✅ 跳轉成功 (頁面已更新)")
-                    time.sleep(1)
-                else:
-                    print(f"❌ 跳轉請求失敗: {post_res.status_code}")
-                    break
+                # 優先級 S: 直接是 Last
+                if val_str == "Last" or "Last" in txt or "末頁" in txt:
+                    best_link = link
+                    target_type = "Last"
+                    break # 找到最後一頁，直接鎖定
+                
+                # 優先級 A: 數字
+                if val_str.isdigit():
+                    page_num = int(val_str)
+                    # 只有當這個數字「大於」我們目前所在的頁數時，才考慮
+                    if page_num > current_page and page_num > best_arg_val:
+                        best_arg_val = page_num
+                        best_link = link
+                        target_type = f"Page {page_num}"
+            
+            # 優先級 B: 只有文字特徵 (>> 或 ...)
+            elif ">>" in txt or "..." in txt:
+                # 只有當我們還沒找到明確的數字目標時，才把這個當備案
+                if target_type == "None":
+                    best_link = link
+                    target_type = "Next Block"
+
+        # 決策執行
+        if best_link:
+            print(f"🎯 鎖定目標: [{target_type}]，執行跳轉...")
+            target, arg = extract_do_postback_args(best_link['href'])
+            
+            payload = get_hidden_fields(soup)
+            payload["__EVENTTARGET"] = target
+            payload["__EVENTARGUMENT"] = arg
+            
+            post_res = session.post(BASE_URL, data=payload, headers=HEADERS, timeout=30)
+            if post_res.status_code == 200:
+                soup = BeautifulSoup(post_res.text, "html.parser")
+                # 更新當前頁碼紀錄 (如果是跳數字的話)
+                if target_type.startswith("Page "):
+                    current_page = int(target_type.split()[1])
+                elif target_type == "Next Block":
+                    current_page += 1 # 預估前進了
+                print("✅ 跳轉成功！")
+                time.sleep(1)
             else:
+                print(f"❌ 跳轉失敗: {post_res.status_code}")
                 break
         else:
-            print("🏁 無法找到更多往後的按鈕，判斷已達【最後一頁】")
+            print("🏁 無法找到更後面的頁面，判斷已達【終點】")
             break
             
     return soup
 
 def extract_time(container):
-    # 優先找 local-time
     time_span = container.find("span", class_="local-time")
     if time_span: return time_span.text.strip()
-    
-    # 備用：正則表達式
     text = container.get_text()
     match = re.search(r'\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{1,2}:\d{1,2}', text)
     if match: return match.group(0)
-    
     return "無時間資訊"
 
 def main():
-    print(f"🚀 V9 啟動檢查: {datetime.now()}")
+    print(f"🚀 V10 啟動檢查: {datetime.now()}")
     status = load_status()
     last_fingerprint = status["last_fingerprint"]
     
     session = requests.Session()
     
-    # 1. 執行追頁 (PostBack 模擬)
+    # 1. 執行追頁
     soup = chase_last_page(session)
 
     # 2. 搜尋 Mikeon88
-    # 這裡改回用 V3 的精確搜尋邏輯 (ID鎖定)
     author_links = soup.find_all("a", id=re.compile("lnkName"))
     found_posts = []
     print(f"🔍 掃描最終頁面發言...")
@@ -190,20 +199,14 @@ def main():
             post_content = "無內容"
             post_time = "無時間"
             
-            # 往上找 5 層
             for _ in range(5):
                 if container.parent:
                     container = container.parent
-                    
-                    # 抓內容
                     body_div = container.find("div", class_="post-body")
                     if body_div:
                         post_content = body_div.get_text("\n", strip=True)
-                    
-                    # 抓時間
                     t = extract_time(container)
                     if t != "無時間資訊": post_time = t
-                    
                     if body_div: break
                 else: break
             
