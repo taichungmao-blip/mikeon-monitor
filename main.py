@@ -11,7 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 # 🛠️ 使用者設定區
 # ==========================================
 # 1. 目標網址
-TARGET_URL = "https://mikeon88.com/..."  # 請確認這是你的目標網址
+TARGET_URL = "https://stocks.ddns.net/Forum/128/mikeon88%E6%8C%81%E8%82%A1%E5%A4%A7%E5%85%AC%E9%96%8B.aspx?goto=14104"  # 請確認這是你的目標網址
 
 # 2. Discord Webhook (優先讀取環境變數，沒有則使用預設值)
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK", "你的_DISCORD_WEBHOOK_URL_貼在這裡")
