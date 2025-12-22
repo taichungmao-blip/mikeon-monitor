@@ -48,6 +48,14 @@ def run_test():
     # 設定瀏覽器 (無頭模式可選)
     options = Options()
     # options.add_argument("--headless") 
+    # -----------------------------------------------------------
+    # 必加設定 (針對 GitHub Actions / Linux Server)
+    # -----------------------------------------------------------
+    options.add_argument("--headless=new")  # ✅ 啟用無頭模式 (新版寫法)
+    options.add_argument("--no-sandbox")    # ✅ 解決權限問題 (CI 環境必備)
+    options.add_argument("--disable-dev-shm-usage") # ✅ 避免記憶體不足崩潰
+    options.add_argument("--window-size=1920,1080") # ✅ 設定虛擬視窗大小，避免排版跑掉
+    # -----------------------------------------------------------
     
     print("🚀 V11 測試啟動...")
     driver = webdriver.Chrome(options=options)
