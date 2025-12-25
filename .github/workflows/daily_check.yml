@@ -1,49 +1,42 @@
-name: Mikeon88 Daily Monitor
+name: Daily Check
 
 on:
   schedule:
-    # GitHub 使用 UTC 時間。日本 11:00 = UTC 02:00
-    - cron: '0 2 * * *'
-  # 允許手動點擊按鈕觸發 (方便測試用)
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    - cron: '0 * * * *' # 每小時執行一次
+  workflow_dispatch:      # 允許手動執行
 
 jobs:
-  check_and_notify:
-    # 這裡修正了：使用 runs-on (連字號)
+  build:
     runs-on: ubuntu-latest
     
+    # 👇 必須加入這行，給予寫入權限
+    permissions:
+      contents: write
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
- # 👇 加入這一段：安裝 Selenium
-    - name: Install dependencies
-      run: |
-       python -m pip install --upgrade pip
-       pip install selenium
-    - name: Install dependencies
-      run: |
-        pip install requests beautifulsoup4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
 
-    - name: Run Monitor Script
-      env:
-        # 這裡會讀取你在 GitHub 設定的 Secret
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-      run: python main.py
+      - name: Install dependencies
+        run: |
+          pip install selenium requests
 
-    - name: Commit and Push changes
-      # 如果 status.json 有更新 (翻頁或有新文)，就存回 GitHub
-      run: |
-        git config --global user.name "GitHub Actions Bot"
-        git config --global user.email "actions@github.com"
-        git add status.json
-        # 如果沒有變化，commit 會失敗，所以加上 || exit 0 讓它不要報錯
-        git commit -m "Update monitor status" || exit 0
-        git push
+      - name: Run Scraper
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python main.py
+
+      # 👇👇👇 請新增下面這一段 (這是存檔的關鍵) 👇👇👇
+      - name: Commit and Push History
+        run: |
+          git config --global user.name "GitHub Action Bot"
+          git config --global user.email "bot@noreply.github.com"
+          git add sent_history.txt
+          # 如果有變更才 Commit，沒有變更則略過
+          git commit -m "📝 Auto-update history log" || echo "No changes to commit"
+          git push
