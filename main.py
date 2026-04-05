@@ -77,6 +77,45 @@ def main():
 
     try:
         driver.get(TARGET_URL)
+        try:
+        driver.get(TARGET_URL)
+        time.sleep(5)
+        
+        # ==========================================
+        # 🔄 新增：自動翻頁到最新一頁邏輯
+        # ==========================================
+        try:
+            # 尋找所有可點擊的分頁按鈕 (a 標籤)
+            page_links = driver.find_elements(By.CSS_SELECTOR, "a.page-link")
+            
+            target_element = None
+            max_num = 0
+            
+            for link in page_links:
+                text = link.text.strip()
+                # 判斷按鈕文字如果是數字，找出最大值
+                if text.isdigit():
+                    num = int(text)
+                    if num > max_num:
+                        max_num = num
+                        target_element = link
+                        
+            # 如果有找到可以點擊的數字頁碼，就點擊它
+            if target_element:
+                print(f"🔄 發現最新頁碼 {max_num}，正在自動點擊跳轉...")
+                target_element.click()
+                time.sleep(5) # 等待新一頁的內容載入
+                
+        except Exception as e:
+            print(f"⚠️ 翻頁過程發生異常 (或找不到頁碼): {e}")
+        # ==========================================
+
+        # 接下來是原本抓取文章的邏輯
+        rows = driver.find_elements(By.CSS_SELECTOR, "div.card")
+
+        for row in rows:
+            text = row.text.strip()
+            # (以下維持您原本的過濾與通知邏輯即可...)
         time.sleep(5)
         rows = driver.find_elements(By.CSS_SELECTOR, "div.card")
 
