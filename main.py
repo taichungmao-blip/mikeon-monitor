@@ -80,40 +80,43 @@ def main():
         time.sleep(5)
         
         # ==========================================
-        # 🔄 新增：自動翻頁到最新一頁邏輯 (進階迴圈版)
+        # 🔄 新增：自動翻頁到最新一頁邏輯 (右側尋找版)
         # ==========================================
         try:
             while True:
-                # 同時尋找可點擊的連結 (a) 和當前頁碼 (span)
+                # 取得畫面上所有的分頁按鈕 (包含連結 a 與當前頁面 span)
                 page_elements = driver.find_elements(By.CSS_SELECTOR, "a.page-link, span.page-link")
                 
                 target_element = None
-                max_num = 0
-                is_clickable = False
+                span_index = -1
                 
-                for elem in page_elements:
-                    text = elem.text.strip()
-                    if text.isdigit():
-                        num = int(text)
-                        if num > max_num:
-                            max_num = num
-                            # 判斷這個最大數字是不是可以點擊的 <a> 標籤
-                            if elem.tag_name.lower() == 'a':
-                                target_element = elem
-                                is_clickable = True
-                            else:
-                                # 如果最大數字是 <span>，代表我們已經在最後一頁了
-                                target_element = None
-                                is_clickable = False
+                # 1. 找出目前所在頁碼 (span) 在清單中的位置
+                for i, elem in enumerate(page_elements):
+                    if elem.tag_name.lower() == 'span':
+                        span_index = i
+                        break
                 
-                # 如果找到更大的頁碼且可以點擊，就執行點擊並等待，然後繼續下一輪迴圈
-                if is_clickable and target_element:
-                    print(f"🔄 發現更大頁碼 {max_num}，正在自動點擊跳轉...")
+                # 2. 如果 span 右邊還有其他按鈕，代表還沒到最後一頁
+                if span_index != -1 and span_index < len(page_elements) - 1:
+                    # 抓取 span 右邊的「所有」元素
+                    right_elements = page_elements[span_index + 1:]
+                    
+                    # 找出右邊的元素中，屬於可點擊的連結 (a 標籤)
+                    clickable_elements = [e for e in right_elements if e.tag_name.lower() == 'a']
+                    
+                    if clickable_elements:
+                        # 永遠點擊最右邊的那個按鈕 (通常是「最末頁」、「跳區塊...」或最大數字)
+                        target_element = clickable_elements[-1]
+                
+                # 3. 執行點擊或結束翻頁
+                if target_element:
+                    text_label = target_element.text.strip() or "符號"
+                    print(f"🔄 發現後續分頁 ({text_label})，正在自動點擊跳轉...")
                     driver.execute_script("arguments[0].click();", target_element)
                     time.sleep(5) # 等待新一頁載入
                 else:
-                    print(f"✅ 已到達目前最大頁碼 ({max_num})，停止翻頁。")
-                    break # 跳出迴圈，開始往下抓取內容
+                    print(f"✅ 已到達最後一頁，停止翻頁。")
+                    break
 
         except Exception as e:
             print(f"⚠️ 翻頁過程發生異常: {e}")
