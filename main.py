@@ -149,4 +149,15 @@ def main():
             else:
                 pass # 已讀跳過
 
-        if new
+        if new_items_count > 0:
+            print(f"🎉 新增了 {new_items_count} 筆紀錄 (等待 GitHub 存檔...)")
+        else:
+            print("💤 沒有新內容")
+
+    except Exception as e:
+        print(f"❌ 錯誤: {e}")
+    finally:
+        driver.quit()
+
+if __name__ == "__main__":
+    main()
