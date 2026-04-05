@@ -43,7 +43,7 @@ def append_history(unique_id):
 def generate_id(text):
     """產生唯一特徵碼"""
     # 優先抓取時間
-    match = re.search(r"(\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{1,2}:\d{1,2})", text)
+    match = re.search(r"(\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{1,2}(?::\d{1,2})?)", text)
     if match:
         return f"TIME_{match.group(1)}"
     # 沒時間則用雜湊
