@@ -10,6 +10,7 @@ from selenium.webdriver.chrome.options import Options
 # ==========================================
 # 🛠️ 設定區
 # ==========================================
+# 已經移除結尾的 ?goto=14104，讓程式可以自由翻頁
 TARGET_URL = "https://stocks.ddns.net/Forum/128/mikeon88%E6%8C%81%E8%82%A1%E5%A4%A7%E5%85%AC%E9%96%8B.aspx"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK", "") 
 
@@ -42,7 +43,7 @@ def append_history(unique_id):
 
 def generate_id(text):
     """產生唯一特徵碼"""
-    # 優先抓取時間
+    # 優先抓取時間 (修改為相容沒有秒數的格式)
     match = re.search(r"(\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{1,2}(?::\d{1,2})?)", text)
     if match:
         return f"TIME_{match.group(1)}"
@@ -78,7 +79,7 @@ def main():
     try:
         driver.get(TARGET_URL)
         time.sleep(5)
-        
+
         # ==========================================
         # 🔄 新增：自動翻頁到最新一頁邏輯 (右側尋找版)
         # ==========================================
@@ -112,6 +113,7 @@ def main():
                 if target_element:
                     text_label = target_element.text.strip() or "符號"
                     print(f"🔄 發現後續分頁 ({text_label})，正在自動點擊跳轉...")
+                    # 使用 JavaScript 強制點擊，避開畫面遮擋問題
                     driver.execute_script("arguments[0].click();", target_element)
                     time.sleep(5) # 等待新一頁載入
                 else:
@@ -122,14 +124,12 @@ def main():
             print(f"⚠️ 翻頁過程發生異常: {e}")
         # ==========================================
 
-        # 接下來是原本抓取文章的邏輯
+        # 開始抓取該頁的文章內容
         rows = driver.find_elements(By.CSS_SELECTOR, "div.card")
-
-    
 
         for row in rows:
             text = row.text.strip()
-            # 原本的過濾條件
+            # 過濾長度過短或包含廣告的內容
             if len(text) < 5 or any(k in text for k in ["廣告", "Klook"]): continue
             
             # --- 新增的過濾條件：只抓取發文者為 mikeon88 的文章 ---
@@ -137,7 +137,7 @@ def main():
             if not lines or "mikeon88" not in lines[0]:
                 continue
             # -----------------------------------------------------
-
+            
             uid = generate_id(text)
             
             if uid not in history:
@@ -149,15 +149,4 @@ def main():
             else:
                 pass # 已讀跳過
 
-        if new_items_count > 0:
-            print(f"🎉 新增了 {new_items_count} 筆紀錄 (等待 GitHub 存檔...)")
-        else:
-            print("💤 沒有新內容")
-
-    except Exception as e:
-        print(f"❌ 錯誤: {e}")
-    finally:
-        driver.quit()
-
-if __name__ == "__main__":
-    main()
+        if new
