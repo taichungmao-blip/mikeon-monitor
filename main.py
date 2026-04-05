@@ -99,7 +99,7 @@ def main():
                     if elem.tag_name.lower() == 'span':
                         span_index = i
                         current_page_text = elem.text.strip()
-                        break
+                        
                 
                 # 🚨 防呆機制：如果當前頁碼跟上一輪一模一樣，代表網頁沒有跳轉，強制停止！
                 if current_page_text == last_seen_page:
