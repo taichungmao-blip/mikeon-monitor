@@ -101,7 +101,8 @@ def main():
             # 如果有找到可以點擊的數字頁碼，就點擊它
             if target_element:
                 print(f"🔄 發現最新頁碼 {max_num}，正在自動點擊跳轉...")
-                target_element.click()
+                # 使用 JavaScript 強制點擊，避開畫面遮擋問題
+                driver.execute_script("arguments[0].click();", target_element)
                 time.sleep(5) # 等待新一頁的內容載入
                 
         except Exception as e:
