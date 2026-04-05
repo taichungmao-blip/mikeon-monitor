@@ -81,21 +81,31 @@ def main():
         time.sleep(5)
 
         # ==========================================
-        # 🔄 新增：自動翻頁到最新一頁邏輯 (右側尋找版)
+        # 🔄 新增：自動翻頁到最新一頁邏輯 (防死迴圈版)
         # ==========================================
         try:
+            last_seen_page = None  # 新增：用來記錄上一輪的頁碼
+            
             while True:
                 # 取得畫面上所有的分頁按鈕 (包含連結 a 與當前頁面 span)
                 page_elements = driver.find_elements(By.CSS_SELECTOR, "a.page-link, span.page-link")
                 
                 target_element = None
                 span_index = -1
+                current_page_text = ""
                 
-                # 1. 找出目前所在頁碼 (span) 在清單中的位置
+                # 1. 找出目前所在頁碼 (span) 在清單中的位置與文字
                 for i, elem in enumerate(page_elements):
                     if elem.tag_name.lower() == 'span':
                         span_index = i
+                        current_page_text = elem.text.strip()
                         break
+                
+                # 🚨 防呆機制：如果當前頁碼跟上一輪一模一樣，代表網頁沒有跳轉，強制停止！
+                if current_page_text == last_seen_page:
+                    print(f"✅ 頁面已不再變動 (停留在頁碼 {current_page_text})，停止翻頁。")
+                    break
+                last_seen_page = current_page_text  # 更新記錄
                 
                 # 2. 如果 span 右邊還有其他按鈕，代表還沒到最後一頁
                 if span_index != -1 and span_index < len(page_elements) - 1:
@@ -106,18 +116,18 @@ def main():
                     clickable_elements = [e for e in right_elements if e.tag_name.lower() == 'a']
                     
                     if clickable_elements:
-                        # 永遠點擊最右邊的那個按鈕 (通常是「最末頁」、「跳區塊...」或最大數字)
+                        # 永遠點擊最右邊的那個按鈕
                         target_element = clickable_elements[-1]
                 
                 # 3. 執行點擊或結束翻頁
                 if target_element:
                     text_label = target_element.text.strip() or "符號"
                     print(f"🔄 發現後續分頁 ({text_label})，正在自動點擊跳轉...")
-                    # 使用 JavaScript 強制點擊，避開畫面遮擋問題
+                    # 使用 JavaScript 強制點擊
                     driver.execute_script("arguments[0].click();", target_element)
                     time.sleep(5) # 等待新一頁載入
                 else:
-                    print(f"✅ 已到達最後一頁，停止翻頁。")
+                    print(f"✅ 右側已無按鈕，到達最後一頁，停止翻頁。")
                     break
 
         except Exception as e:
