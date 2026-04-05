@@ -77,8 +77,6 @@ def main():
 
     try:
         driver.get(TARGET_URL)
-        try:
-        driver.get(TARGET_URL)
         time.sleep(5)
         
         # ==========================================
@@ -113,11 +111,7 @@ def main():
         # 接下來是原本抓取文章的邏輯
         rows = driver.find_elements(By.CSS_SELECTOR, "div.card")
 
-        for row in rows:
-            text = row.text.strip()
-            # (以下維持您原本的過濾與通知邏輯即可...)
-        time.sleep(5)
-        rows = driver.find_elements(By.CSS_SELECTOR, "div.card")
+    
 
         for row in rows:
             text = row.text.strip()
