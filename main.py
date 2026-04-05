@@ -82,8 +82,15 @@ def main():
 
         for row in rows:
             text = row.text.strip()
+            # 原本的過濾條件
             if len(text) < 5 or any(k in text for k in ["廣告", "Klook"]): continue
             
+            # --- 新增的過濾條件：只抓取發文者為 mikeon88 的文章 ---
+            lines = text.splitlines()
+            if not lines or "mikeon88" not in lines[0]:
+                continue
+            # -----------------------------------------------------
+
             uid = generate_id(text)
             
             if uid not in history:
