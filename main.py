@@ -80,33 +80,43 @@ def main():
         time.sleep(5)
         
         # ==========================================
-        # 🔄 新增：自動翻頁到最新一頁邏輯
+        # 🔄 新增：自動翻頁到最新一頁邏輯 (進階迴圈版)
         # ==========================================
         try:
-            # 尋找所有可點擊的分頁按鈕 (a 標籤)
-            page_links = driver.find_elements(By.CSS_SELECTOR, "a.page-link")
-            
-            target_element = None
-            max_num = 0
-            
-            for link in page_links:
-                text = link.text.strip()
-                # 判斷按鈕文字如果是數字，找出最大值
-                if text.isdigit():
-                    num = int(text)
-                    if num > max_num:
-                        max_num = num
-                        target_element = link
-                        
-            # 如果有找到可以點擊的數字頁碼，就點擊它
-            if target_element:
-                print(f"🔄 發現最新頁碼 {max_num}，正在自動點擊跳轉...")
-                # 使用 JavaScript 強制點擊，避開畫面遮擋問題
-                driver.execute_script("arguments[0].click();", target_element)
-                time.sleep(5) # 等待新一頁的內容載入
+            while True:
+                # 同時尋找可點擊的連結 (a) 和當前頁碼 (span)
+                page_elements = driver.find_elements(By.CSS_SELECTOR, "a.page-link, span.page-link")
                 
+                target_element = None
+                max_num = 0
+                is_clickable = False
+                
+                for elem in page_elements:
+                    text = elem.text.strip()
+                    if text.isdigit():
+                        num = int(text)
+                        if num > max_num:
+                            max_num = num
+                            # 判斷這個最大數字是不是可以點擊的 <a> 標籤
+                            if elem.tag_name.lower() == 'a':
+                                target_element = elem
+                                is_clickable = True
+                            else:
+                                # 如果最大數字是 <span>，代表我們已經在最後一頁了
+                                target_element = None
+                                is_clickable = False
+                
+                # 如果找到更大的頁碼且可以點擊，就執行點擊並等待，然後繼續下一輪迴圈
+                if is_clickable and target_element:
+                    print(f"🔄 發現更大頁碼 {max_num}，正在自動點擊跳轉...")
+                    driver.execute_script("arguments[0].click();", target_element)
+                    time.sleep(5) # 等待新一頁載入
+                else:
+                    print(f"✅ 已到達目前最大頁碼 ({max_num})，停止翻頁。")
+                    break # 跳出迴圈，開始往下抓取內容
+
         except Exception as e:
-            print(f"⚠️ 翻頁過程發生異常 (或找不到頁碼): {e}")
+            print(f"⚠️ 翻頁過程發生異常: {e}")
         # ==========================================
 
         # 接下來是原本抓取文章的邏輯
