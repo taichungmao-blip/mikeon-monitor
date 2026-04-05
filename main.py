@@ -10,7 +10,7 @@ from selenium.webdriver.chrome.options import Options
 # ==========================================
 # 🛠️ 設定區
 # ==========================================
-TARGET_URL = "https://stocks.ddns.net/Forum/128/mikeon88%E6%8C%81%E8%82%A1%E5%A4%A7%E5%85%AC%E9%96%8B.aspx?goto=14104"
+TARGET_URL = "https://stocks.ddns.net/Forum/128/mikeon88%E6%8C%81%E8%82%A1%E5%A4%A7%E5%85%AC%E9%96%8B.aspx"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK", "") 
 
 # 檔案名稱 (必須與 yml 檔對應)
